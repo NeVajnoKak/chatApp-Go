@@ -28,7 +28,7 @@ func GetChat(w http.ResponseWriter, r *http.Request) {
 
 func GetChatById(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	ChatId := vars["ChatId"]
+	ChatId := vars["id"]
 	ID, err := strconv.ParseInt(ChatId, 0, 0)
 	if err != nil {
 		http.Error(w, "Invalid Chat ID: "+err.Error(), http.StatusBadRequest)
@@ -88,7 +88,7 @@ func UpdateChat(w http.ResponseWriter, r *http.Request) {
 	updateChat := &models.Chat{}
 	utils.ParseBody(r, updateChat)
 	vars := mux.Vars(r)
-	ChatId := vars["ChatId"]
+	ChatId := vars["id"]
 	ID, err := strconv.ParseInt(ChatId, 0, 0)
 	if err != nil {
 		http.Error(w, "Invalid Chat ID: "+err.Error(), http.StatusBadRequest)
