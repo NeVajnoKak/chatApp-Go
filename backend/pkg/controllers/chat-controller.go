@@ -1,120 +1,259 @@
 package controllers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 
-	"github.com/NeVajnoKak/chatApp-Go/pkg/models"
-	"github.com/NeVajnoKak/chatApp-Go/pkg/utils"
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
-func GetChat(w http.ResponseWriter, r *http.Request) {
-	newChats, err := models.GetAllChats()
-	if err != nil {
-		http.Error(w, "Error fetching Chats: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	res, err := json.Marshal(newChats)
-	if err != nil {
-		http.Error(w, "Error marshalling Chats: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(res)
+type response struct {
+	ID      int64  `json:"id,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
-func GetChatById(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	ChatId := vars["id"]
-	ID, err := strconv.ParseInt(ChatId, 0, 0)
+func CreateConnection() *sql.DB {
+	err := godotenv.Load(".env")
+
 	if err != nil {
-		http.Error(w, "Invalid Chat ID: "+err.Error(), http.StatusBadRequest)
-		return
+		log.Fatal("Error loading .env file")
 	}
-	ChatDetails, _, err := models.GetChatById(ID)
+
+	db, err := sql.Open("postgres", os.Getenv("POSTGRES_URL"))
+
 	if err != nil {
-		http.Error(w, "Error fetching Chat: "+err.Error(), http.StatusInternalServerError)
-		return
+		panic(err)
 	}
-	res, err := json.Marshal(ChatDetails)
+
+	err = db.Ping()
+
 	if err != nil {
-		http.Error(w, "Error marshalling Chat: "+err.Error(), http.StatusInternalServerError)
-		return
+		panic(err)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(res)
+
+	fmt.Println("Succesfully connected to postgres")
+	return db
 }
 
-func CreateChat(w http.ResponseWriter, r *http.Request) {
-	CreateChat := &models.Chat{}
-	utils.ParseBody(r, CreateChat)
-	b, err := CreateChat.CreateChat()
+func Createchat(w http.ResponseWriter, r *http.Request) {
+	var chat models.chat
+
+	err := json.NewDecoder(r.Body).Decode(&chat)
+
 	if err != nil {
-		http.Error(w, "Error creating Chat: "+err.Error(), http.StatusInternalServerError)
-		return
+		log.Fatal("Unabel to decide the request body. %v", err)
 	}
-	res, err := json.Marshal(b)
-	if err != nil {
-		http.Error(w, "Error marshalling Chat: "+err.Error(), http.StatusInternalServerError)
-		return
+
+	insertID := insertchat(chat)
+
+	res := response{
+		ID:      insertID,
+		Message: "chat created successfully",
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(res)
+
+	json.NewEncoder(w).Encode(res)
 }
 
-func DeleteChat(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	ChatId := vars["ChatId"]
-	ID, err := strconv.ParseInt(ChatId, 0, 0)
+func Getchat(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
+	id, err := strconv.Atoi(params["id"])
+
 	if err != nil {
-		http.Error(w, "Invalid Chat ID: "+err.Error(), http.StatusBadRequest)
-		return
+		log.Fatalf("Unable to convert the string into int. %v", err)
 	}
-	err = models.DeleteChat(ID)
+
+	chat, err := getchat(int64(id))
+
 	if err != nil {
-		http.Error(w, "Error deleting Chat: "+err.Error(), http.StatusInternalServerError)
-		return
+		log.Fatalf("Unable to get chat. %v", err)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+
+	json.NewEncoder(w).Encode(chat)
 }
 
-func UpdateChat(w http.ResponseWriter, r *http.Request) {
-	updateChat := &models.Chat{}
-	utils.ParseBody(r, updateChat)
-	vars := mux.Vars(r)
-	ChatId := vars["id"]
-	ID, err := strconv.ParseInt(ChatId, 0, 0)
+func GetAllchat(w http.ResponseWriter, r *http.Request) {
+	chats, err := getAllchats()
+
 	if err != nil {
-		http.Error(w, "Invalid Chat ID: "+err.Error(), http.StatusBadRequest)
-		return
+		log.Fatalf("Unable to get all the chats. %v", err)
 	}
-	ChatDetails, db, err := models.GetChatById(ID)
+
+	json.NewEncoder(w).Encode(chats)
+}
+
+func Updatechat(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
+	id, err := strconv.Atoi(params["id"])
+
 	if err != nil {
-		http.Error(w, "Error fetching Chat: "+err.Error(), http.StatusInternalServerError)
-		return
+		log.Fatalf("Unable to convert the string into int. %v", err)
 	}
-	if updateChat.Message != "" {
-		ChatDetails.Message = updateChat.Message
-	}
-	if updateChat.UserId != "" {
-		ChatDetails.UserId = updateChat.UserId
-	}
-	if err := db.Save(&ChatDetails).Error; err != nil {
-		http.Error(w, "Error updating Chat: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	res, err := json.Marshal(ChatDetails)
+
+	var chat models.chat
+
+	err = json.NewDecoder(r.Body).Decode(&chat)
+
 	if err != nil {
-		http.Error(w, "Error marshalling Chat: "+err.Error(), http.StatusInternalServerError)
-		return
+		log.Fatalf("Unable to decode the request body. %v", err)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(res)
+
+	updateRows := updatechat(int64(id), chat)
+
+	msg := fmt.Sprintf("chats update successfully. Total rows /record affected %v", updateRows)
+	res := response{
+		ID:      int64(id),
+		Message: msg,
+	}
+
+	json.NewEncoder(w).Encode(res)
+}
+
+func Deletechat(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
+	id, err := strconv.Atoi(params["id"])
+
+	if err != nil {
+		log.Fatalf("Unable to convert the string into int. %v", err)
+	}
+
+	deletedRows := deletechat(int64(id))
+
+	msg := fmt.Sprintf("chat deleted successfully. Total rows /records %v", deletedRows)
+
+	res := response{
+		ID:      int64(id),
+		Message: msg,
+	}
+
+	json.NewEncoder(w).Encode(res)
+}
+
+func insertchat(chat models.chat) int64 {
+	db := CreateConnection()
+	defer db.Close()
+
+	sqlStatement := `INSERT INTO chats(name, price, company) VALUES ($1 , $2 , $3) RETURNING chatid`
+	var id int64
+
+	err := db.QueryRow(sqlStatement, chat.Name, chat.Price, chat.Company).Scan(&id)
+
+	if err != nil {
+		log.Fatalf("Unable to execute query. %v", err)
+	}
+
+	fmt.Printf("Inserted a single record %v", id)
+
+	return id
+}
+
+func getchat(id int64) (models.chat, error) {
+	db := CreateConnection()
+
+	defer db.Close()
+
+	var chat models.chat
+
+	sqlStatement := `SELECT * FROM chats WHERE chatid=$1`
+
+	row := db.QueryRow(sqlStatement, id)
+
+	err := row.Scan(&chat.chatID, &chat.Name, &chat.Price, &chat.Company)
+
+	switch err {
+	case sql.ErrNoRows:
+		fmt.Println("Now rows were returned!")
+		return chat, nil
+	case nil:
+		return chat, nil
+	default:
+		log.Fatalf("Unable to scan the row. %v", err)
+	}
+
+	return chat, err
+}
+
+func getAllchats() ([]models.chat, error) {
+	db := CreateConnection()
+
+	defer db.Close()
+
+	var chats []models.chat
+
+	sqlStatement := `SELECT * FROM chats`
+
+	rows, err := db.Query(sqlStatement)
+
+	if err != nil {
+		log.Fatalf("Unable to execute query. %v", err)
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var chat models.chat
+		err = rows.Scan(&chat.chatID, &chat.Name, &chat.Price, &chat.Company)
+
+		if err != nil {
+			log.Fatalf("Unable to scan the row %v", err)
+		}
+		chats = append(chats, chat)
+	}
+	return chats, err
+}
+
+func updatechat(id int64, chat models.chat) int64 {
+	db := CreateConnection()
+
+	defer db.Close()
+
+	sqlStatement := `UPDATE chats SET name=$2 , price=$3, company=$4 WHERE chatid =$1`
+	res, err := db.Exec(sqlStatement, id, chat.Name, chat.Price, chat.Company)
+
+	if err != nil {
+		log.Fatalf("Unable to execute the query %v", err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+
+	if err != nil {
+		log.Fatalf("Error while checking the affected rows. %v", err)
+	}
+
+	fmt.Printf("Total rows/records affected %v", rowsAffected)
+
+	return rowsAffected
+}
+
+func deletechat(id int64) int64 {
+	db := CreateConnection()
+
+	defer db.Close()
+
+	sqlStatement := `DELETE FROM chats WHERE chatid=$1`
+
+	res, err := db.Exec(sqlStatement, id)
+
+	if err != nil {
+		log.Fatalf("Unable to execute the query %v", err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+
+	if err != nil {
+		log.Fatalf("Error while checking the affected rows. %v", err)
+	}
+
+	fmt.Printf("Total rows/records affected %v", rowsAffected)
+
+	return rowsAffected
 }

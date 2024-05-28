@@ -1,17 +1,15 @@
 package main
 
 import (
+	"backend/pkg/router"
+	"fmt"
 	"log"
 	"net/http"
-
-	"github.com/NeVajnoKak/chatApp-Go/pkg/routes"
-	"github.com/gorilla/mux"
-	_ "github.com/jinzhu/gorm/dialects/mysql"
 )
 
 func main() {
-	r := mux.NewRouter()
-	routes.RegisterChatRoutes(r)
-	http.Handle("/", r)
-	log.Fatal(http.ListenAndServe("localhost:9010", r))
+	r := router.Router()
+	fmt.Println("Starting server on the port 8080....")
+
+	log.Fatal(http.ListenAndServe(":8080", r))
 }
